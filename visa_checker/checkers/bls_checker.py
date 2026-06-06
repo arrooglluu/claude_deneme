@@ -1,88 +1,96 @@
 """
-BLS International randevu kontrol modülü — anti-ban versiyonu.
+BLS International randevu kontrol modülü (İspanya için).
+Formu doldurup (Istanbul, Individual, Tourist Visa, Normal) submit eder ve sonucu okur.
 """
 
 import logging
-import random
+import time
 
-import requests
-from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
-from fake_useragent import UserAgent
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from browser import build_driver, human_delay, human_scroll
 
 log = logging.getLogger(__name__)
-UA = UserAgent()
 
 NO_SLOT_PHRASES = [
+    "currently, no slots are available",
+    "no slots are available",
     "no appointment",
-    "not available",
-    "appointment not available",
-    "no slots",
-    "there are no available",
-    "müsait randevu yok",
+    "kindly try again",
+    "try again after sometime",
+]
+
+SLOT_AVAILABLE_PHRASES = [
+    "select a date",
+    "choose a date",
+    "available slots",
+    "book appointment",
+    "select slot",
 ]
 
 
 def check(target: dict, headless: bool = True) -> list[str]:
-    slots = _check_with_requests(target)
-    if slots is not None:
-        return slots
-    log.info(f"[BLS][{target['country']}] Selenium ile deneniyor...")
     return _check_with_selenium(target, headless)
-
-
-def _check_with_requests(target: dict) -> list[str] | None:
-    headers = {
-        "User-Agent": UA.random,
-        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Referer": "https://tr.blsinternational.com/",
-    }
-    try:
-        session = requests.Session()
-        # Önce ana sayfayı ziyaret et
-        session.get("https://tr.blsinternational.com/", headers=headers, timeout=15)
-        import time; time.sleep(random.uniform(1.5, 3.5))
-
-        resp = session.get(target["url"], headers=headers, timeout=15)
-        if resp.status_code != 200:
-            return None
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        page_text = soup.get_text(separator=" ").lower()
-
-        for phrase in NO_SLOT_PHRASES:
-            if phrase in page_text:
-                log.info(f"[BLS][{target['country']}] Müsait randevu yok.")
-                return []
-
-        slots = _parse_soup(soup, target.get("city_filter", "").lower())
-        if not slots and "appointment" not in page_text:
-            return None  # JS gerekli, Selenium'a geç
-
-        return slots
-
-    except requests.RequestException:
-        return None
 
 
 def _check_with_selenium(target: dict, headless: bool) -> list[str]:
     driver = None
     try:
         driver = build_driver(headless)
-        driver.get("https://tr.blsinternational.com/")
-        human_delay(2, 4)
         driver.get(target["url"])
 
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 25).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
-        human_delay(2, 4)
+        human_delay(3, 5)
+
+        # Jurisdiction → Istanbul
+        _select_by_text(driver, "Jurisdiction", "Istanbul")
+        human_delay(1, 2)
+
+        # Appointment For → Individual
+        try:
+            radios = driver.find_elements(By.CSS_SELECTOR, "input[type='radio']")
+            for r in radios:
+                val = r.get_attribute("value") or ""
+                if "individual" in val.lower():
+                    driver.execute_script("arguments[0].click();", r)
+                    break
+        except Exception:
+            pass
+        human_delay(1, 2)
+
+        # Location → Istanbul
+        _select_by_text(driver, "Location", "Istanbul")
+        human_delay(1, 2)
+
+        # Visa Type → Schengen
+        _select_by_text(driver, "Visa Type", "Schengen")
+        human_delay(1, 2)
+
+        # Visa Sub Type → Tourist
+        _select_by_text(driver, "Visa Sub Type", "Tourist")
+        human_delay(1, 2)
+
+        # Category → Normal
+        _select_by_text(driver, "Category", "Normal")
+        human_delay(1, 2)
+
+        # Submit
+        try:
+            btn = driver.find_element(By.CSS_SELECTOR, "button[type='submit'], input[type='submit'], button.submit")
+            driver.execute_script("arguments[0].click();", btn)
+        except NoSuchElementException:
+            try:
+                btn = driver.find_element(By.XPATH, "//button[contains(text(),'Submit') or contains(text(),'submit')]")
+                driver.execute_script("arguments[0].click();", btn)
+            except Exception:
+                pass
+
+        human_delay(4, 6)
         human_scroll(driver)
 
         page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
@@ -92,27 +100,13 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
                 log.info(f"[BLS][{target['country']}] Müsait randevu yok.")
                 return []
 
-        city_filter = target.get("city_filter", "").lower()
-        slots = []
-        try:
-            elements = driver.find_elements(
-                By.CSS_SELECTOR,
-                "select option, .appointment-date, td.available, .slot, button.date"
-            )
-            for el in elements:
-                text = el.text.strip()
-                if not text or text.lower() in ("select", "seç", "--", "lütfen seçin"):
-                    continue
-                if city_filter and city_filter not in text.lower():
-                    continue
-                slots.append(text)
-        except Exception:
-            pass
+        for phrase in SLOT_AVAILABLE_PHRASES:
+            if phrase in page_text:
+                log.info(f"[BLS][{target['country']}] Randevu mevcut!")
+                return [f"Randevu mevcut — hemen kontrol et: {target['url']}"]
 
-        if not slots:
-            slots = [f"Randevu sayfasını kontrol et: {target['url']}"]
-
-        return slots
+        log.warning(f"[BLS][{target['country']}] Sayfa içeriği okunamadı, bildirim gönderilmiyor.")
+        return []
 
     except TimeoutException:
         log.error(f"[BLS][{target['country']}] Zaman aşımı.")
@@ -128,13 +122,20 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
                 pass
 
 
-def _parse_soup(soup: BeautifulSoup, city_filter: str) -> list[str]:
-    slots = []
-    for el in soup.select("select option, .date, td.open, .slot-available"):
-        text = el.get_text(strip=True)
-        if not text or text.lower() in ("select", "seç", "--"):
-            continue
-        if city_filter and city_filter not in text.lower():
-            continue
-        slots.append(text)
-    return slots[:20]
+def _select_by_text(driver, label: str, keyword: str):
+    """Label'a göre yakındaki select'i bulur ve keyword içeren seçeneği seçer."""
+    keyword_lower = keyword.lower()
+    try:
+        selects = driver.find_elements(By.TAG_NAME, "select")
+        for sel in selects:
+            try:
+                select_obj = Select(sel)
+                for opt in select_obj.options:
+                    if keyword_lower in opt.text.lower():
+                        select_obj.select_by_visible_text(opt.text)
+                        time.sleep(0.5)
+                        return
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning(f"[BLS] '{label}' seçimi başarısız: {e}")
