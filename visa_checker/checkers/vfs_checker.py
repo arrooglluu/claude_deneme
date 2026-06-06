@@ -70,8 +70,15 @@ def check(target: dict, headless: bool = True) -> list[str]:
             time.sleep(random.uniform(2, 4))
 
             # Randevu sayfasına git
-            page.goto(url, wait_until="domcontentloaded", timeout=30000)
-            time.sleep(random.uniform(3, 6))
+            page.goto(url, wait_until="networkidle", timeout=45000)
+            time.sleep(random.uniform(5, 8))
+
+            # Angular app-root yüklensin bekle
+            try:
+                page.wait_for_selector("app-root", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(random.uniform(2, 4))
 
             # Formu doldur
             if form_cfg:
