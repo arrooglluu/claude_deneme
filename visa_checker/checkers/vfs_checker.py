@@ -80,6 +80,14 @@ def check(target: dict, headless: bool = True) -> list[str]:
                 pass
             time.sleep(random.uniform(2, 4))
 
+            # "Şimdi bul" butonuna tıkla
+            try:
+                btn = page.locator("button:has-text('Şimdi bul'), button:has-text('Find'), button:has-text('Start')")
+                btn.first.click(timeout=10000)
+                time.sleep(random.uniform(3, 5))
+            except Exception:
+                pass
+
             # Formu doldur
             if form_cfg:
                 _fill_form(page, form_cfg, country)
