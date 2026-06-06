@@ -16,7 +16,7 @@ from datetime import datetime
 
 import config_loader
 from notifier import notify
-from checkers import vfs_checker, bls_checker
+from checkers import vfs_checker, bls_checker, asvisa_checker
 from browser import jitter_interval
 
 logging.basicConfig(
@@ -48,6 +48,8 @@ def check_target(config: dict, target: dict):
             slots = vfs_checker.check(target, headless=headless)
         elif center == "BLS":
             slots = bls_checker.check(target, headless=headless)
+        elif center == "ASVISA":
+            slots = asvisa_checker.check(target, headless=headless)
         else:
             log.warning(f"Bilinmeyen merkez: {center}")
             return

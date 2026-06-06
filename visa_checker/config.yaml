@@ -40,13 +40,13 @@ targets:
     url: "https://visa.vfsglobal.com/tur/tr/cze/book-an-appointment"
     city_filter: "Istanbul"
 
-  # VFS Global - Macaristan
-  - id: "vfs_hungary"
+  # AS Visa - Macaristan
+  - id: "asvisa_hungary"
     enabled: true
-    center: "VFS"
+    center: "ASVISA"
     country: "Macaristan"
-    url: "https://visa.vfsglobal.com/tur/tr/hun/book-an-appointment"
-    city_filter: "Istanbul"
+    url: "https://appointment.as-visa.com/tr/istanbul-bireysel-basvuru"
+    city_filter: ""
 
   # VFS Global - Hollanda
   - id: "vfs_netherlands"
