@@ -64,6 +64,14 @@ targets:
     url: "https://www.vfsglobal.co.uk/tur/english/book-an-appointment"
     city_filter: "Istanbul"
 
+  # VFS Global - Avusturya
+  - id: "vfs_austria"
+    enabled: true
+    center: "VFS"
+    country: "Avusturya"
+    url: "https://visa.vfsglobal.com/tur/tr/aut/book-an-appointment"
+    city_filter: "Istanbul"
+
   # BLS International - İspanya
   - id: "bls_spain"
     enabled: true
