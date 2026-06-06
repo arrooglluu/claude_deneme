@@ -19,21 +19,30 @@ from browser import build_driver, human_delay, human_scroll
 log = logging.getLogger(__name__)
 UA = UserAgent()
 
+# Sayfada bu metinlerden biri varsa randevu yok demektir
 NO_SLOT_PHRASES = [
     "uygun randevu tarihi bulunmamaktadır",
+    "aşağıdaki tarihe kadar randevular açılmıştır",
     "müsait randevu bulunmamaktadır",
     "randevu mevcut değil",
     "uygun randevu yok",
     "randevu bulunamadı",
     "no appointment",
     "no available",
-    "slot yok",
-    "randevu alınamıyor",
-    "şu an randevu",
+]
+
+# Sayfada bu metinler varsa gerçekten randevu VAR demektir
+SLOT_AVAILABLE_PHRASES = [
+    "randevu al",
+    "tarih seç",
+    "uygun tarihler",
+    "müsait tarih",
+    "book appointment",
 ]
 
 
 def check(target: dict, headless: bool = True) -> list[str]:
+    # Önce requests ile dene (hızlı)
     slots = _check_with_requests(target)
     if slots is not None:
         return slots
@@ -62,14 +71,19 @@ def _check_with_requests(target: dict) -> list[str] | None:
 
         for phrase in NO_SLOT_PHRASES:
             if phrase in page_text:
-                log.info(f"[iDATA][{target['country']}] Müsait randevu yok.")
+                log.info(f"[iDATA][{target['country']}] Müsait randevu yok (requests).")
                 return []
 
-        slots = _parse_soup(soup)
-        if not slots and "randevu" not in page_text:
-            return None  # JS gerekli
+        # Sayfa JS ile yükleniyorsa içerik boş gelir
+        if "randevu" not in page_text and "appointment" not in page_text:
+            return None
 
-        return slots
+        # Gerçekten slot var mı kontrol et
+        for phrase in SLOT_AVAILABLE_PHRASES:
+            if phrase in page_text:
+                return [f"Randevu mevcut olabilir — kontrol et: {target['url']}"]
+
+        return []
 
     except requests.RequestException:
         return None
@@ -80,40 +94,35 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
     try:
         driver = build_driver(headless)
         driver.get("https://www.idata.com.tr/")
-        human_delay(2, 4)
+        human_delay(2, 3)
         driver.get(target["url"])
 
-        WebDriverWait(driver, 20).until(
+        # Sayfanın tamamen yüklenmesini bekle
+        WebDriverWait(driver, 25).until(
             EC.presence_of_element_located((By.TAG_NAME, "body"))
         )
-        human_delay(2, 4)
+        # iDATA sayfası JS render için ekstra bekleme
+        human_delay(5, 8)
         human_scroll(driver)
+        human_delay(2, 3)
 
         page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
 
+        # Önce "randevu yok" kontrolü
         for phrase in NO_SLOT_PHRASES:
             if phrase in page_text:
                 log.info(f"[iDATA][{target['country']}] Müsait randevu yok.")
                 return []
 
-        slots = []
-        try:
-            elements = driver.find_elements(
-                By.CSS_SELECTOR,
-                "select option, .appointment-date, td.available, .slot, button.date, .time-slot, a.randevu"
-            )
-            for el in elements:
-                text = el.text.strip()
-                if not text or text.lower() in ("seç", "select", "--", "lütfen seçin"):
-                    continue
-                slots.append(text)
-        except Exception:
-            pass
+        # Randevu var mı kontrol et
+        for phrase in SLOT_AVAILABLE_PHRASES:
+            if phrase in page_text:
+                log.info(f"[iDATA][{target['country']}] Randevu mevcut!")
+                return [f"Randevu mevcut — hemen kontrol et: {target['url']}"]
 
-        if not slots:
-            slots = [f"Randevu sayfasını kontrol et: {target['url']}"]
-
-        return slots
+        # İkisi de yoksa sayfayı okuyamadık — sessiz kal, yanlış bildirim verme
+        log.warning(f"[iDATA][{target['country']}] Sayfa içeriği okunamadı, bildirim gönderilmiyor.")
+        return []
 
     except TimeoutException:
         log.error(f"[iDATA][{target['country']}] Zaman aşımı.")
@@ -127,13 +136,3 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
                 driver.quit()
             except Exception:
                 pass
-
-
-def _parse_soup(soup: BeautifulSoup) -> list[str]:
-    slots = []
-    for el in soup.select("select option, .date, td.open, .slot-available, .appointment-slot, a.btn"):
-        text = el.get_text(strip=True)
-        if not text or text.lower() in ("seç", "select", "--"):
-            continue
-        slots.append(text)
-    return slots[:20]
