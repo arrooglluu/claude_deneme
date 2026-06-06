@@ -1,34 +1,24 @@
 """
 VFS Global randevu kontrol modülü.
-Önce resmi API endpoint'ini dener, başarısız olursa Selenium'a geçer.
+Selenium ile formu doldurup (merkez + kategori + alt kategori) slot kontrolü yapar.
 """
 
 import logging
 import random
 import time
 
-import requests
-from fake_useragent import UserAgent
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from browser import build_driver, human_delay, human_scroll
 
 log = logging.getLogger(__name__)
-UA = UserAgent()
-
-# VFS Global API — ülke kodlarına göre slot kontrolü
-VFS_API_BASE = "https://lift-api.vfsglobal.com"
-
-COUNTRY_CODES = {
-    "Çekya":    ("tur", "cze"),
-    "Hollanda": ("tur", "nld"),
-    "Avusturya":("tur", "aut"),
-}
 
 NO_SLOT_PHRASES = [
+    "uygun randevu bulunamamaktadır",
+    "şu an için uygun randevu",
     "no appointment slots",
     "no slots available",
     "there are no open",
@@ -38,88 +28,34 @@ NO_SLOT_PHRASES = [
     "müsait randevu bulunmamaktadır",
 ]
 
+# Her ülke için merkez adı, kategori ve alt kategori anahtar kelimeleri
+VFS_FORM_CONFIG = {
+    "Çekya": {
+        "center_keyword": "Istanbul",
+        "category_keyword": "KISA DONEM",
+        "subcategory_keyword": "TURIZM",
+    },
+    "Hollanda": {
+        "center_keyword": "Istanbul",
+        "category_keyword": "SHORT STAY",
+        "subcategory_keyword": "TOURISM",
+    },
+    "Avusturya": {
+        "center_keyword": "Istanbul",
+        "category_keyword": "SHORT STAY",
+        "subcategory_keyword": "TOURISM",
+    },
+}
+
 
 def check(target: dict, headless: bool = True) -> list[str]:
-    country = target["country"]
-
-    if country in COUNTRY_CODES:
-        slots = _check_via_api(target)
-        if slots is not None:
-            return slots
-
-    log.info(f"[VFS][{country}] API başarısız, Selenium ile deneniyor...")
     return _check_with_selenium(target, headless)
-
-
-def _check_via_api(target: dict) -> list[str] | None:
-    """VFS API üzerinden slot kontrolü yapar."""
-    country = target["country"]
-    mission_code, country_code = COUNTRY_CODES[country]
-    city = target.get("city_filter", "Istanbul")
-
-    headers = {
-        "User-Agent": UA.random,
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "tr-TR,tr;q=0.9,en;q=0.8",
-        "Origin": "https://visa.vfsglobal.com",
-        "Referer": f"https://visa.vfsglobal.com/{mission_code}/tr/{country_code}/book-an-appointment",
-    }
-
-    try:
-        # Önce ana sayfayı ziyaret et (session cookie al)
-        session = requests.Session()
-        session.get(
-            f"https://visa.vfsglobal.com/{mission_code}/tr/{country_code}/book-an-appointment",
-            headers=headers, timeout=15
-        )
-        time.sleep(random.uniform(2, 4))
-
-        # Slot availability endpoint
-        url = (
-            f"{VFS_API_BASE}/appointment/slot/checkslotavailable"
-            f"?countryCode={country_code.upper()}"
-            f"&missionCode={mission_code.upper()}"
-            f"&centerCode={city}"
-            f"&visaCategoryCode=-"
-            f"&languageCode=tr"
-        )
-        resp = session.get(url, headers=headers, timeout=15)
-
-        if resp.status_code == 401 or resp.status_code == 403:
-            log.info(f"[VFS-API][{country}] Yetkilendirme gerekiyor, Selenium'a geçiliyor.")
-            return None
-
-        if resp.status_code != 200:
-            return None
-
-        data = resp.json()
-
-        # API yanıtını parse et
-        if isinstance(data, list) and len(data) > 0:
-            slots = []
-            for item in data:
-                date = item.get("appointmentDate") or item.get("date") or str(item)
-                if date:
-                    slots.append(date)
-            log.info(f"[VFS-API][{country}] {len(slots)} slot bulundu!")
-            return slots
-
-        if isinstance(data, dict):
-            if data.get("isSlotAvailable") is False or data.get("slotAvailable") is False:
-                log.info(f"[VFS-API][{country}] Müsait randevu yok.")
-                return []
-            if data.get("isSlotAvailable") is True or data.get("slotAvailable") is True:
-                return [f"Randevu mevcut — sayfayı kontrol et: {target['url']}"]
-
-        return None  # Beklenmedik format, Selenium'a geç
-
-    except (requests.RequestException, ValueError):
-        return None
 
 
 def _check_with_selenium(target: dict, headless: bool) -> list[str]:
     url = target["url"]
-    city_filter = target.get("city_filter", "").lower()
+    country = target["country"]
+    form_cfg = VFS_FORM_CONFIG.get(country, {})
     driver = None
 
     try:
@@ -128,37 +64,51 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
         human_delay(2, 4)
         driver.get(url)
 
-        WebDriverWait(driver, 25).until(
+        # Angular uygulamasının yüklenmesini bekle
+        WebDriverWait(driver, 30).until(
             EC.presence_of_element_located((By.TAG_NAME, "app-root"))
         )
-        human_delay(3, 6)
+        human_delay(3, 5)
         human_scroll(driver)
-        human_delay(1, 3)
 
+        # Merkez seç
+        if form_cfg.get("center_keyword"):
+            _select_dropdown(driver, "center_keyword", form_cfg["center_keyword"], country)
+            human_delay(1, 3)
+
+        # Kategori seç
+        if form_cfg.get("category_keyword"):
+            _select_dropdown(driver, "category_keyword", form_cfg["category_keyword"], country)
+            human_delay(1, 3)
+
+        # Alt kategori seç
+        if form_cfg.get("subcategory_keyword"):
+            _select_dropdown(driver, "subcategory_keyword", form_cfg["subcategory_keyword"], country)
+            human_delay(2, 4)
+
+        # Sonucu oku
         page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
 
         for phrase in NO_SLOT_PHRASES:
-            if phrase in page_text:
-                log.info(f"[VFS][{target['country']}] Müsait randevu yok.")
+            if phrase.lower() in page_text:
+                log.info(f"[VFS][{country}] Müsait randevu yok.")
                 return []
 
-        if city_filter and city_filter not in page_text:
-            log.info(f"[VFS][{target['country']}] {city_filter} için slot yok.")
-            return []
+        slots = _extract_slots(driver)
 
-        slots = _extract_slots(driver, city_filter)
-
-        if not slots:
-            log.warning(f"[VFS][{target['country']}] 'Slot yok' mesajı yok — manuel kontrol et!")
+        if slots:
+            log.info(f"[VFS][{country}] {len(slots)} slot bulundu!")
+        else:
+            log.warning(f"[VFS][{country}] 'Slot yok' mesajı yok — manuel kontrol et!")
             slots = [f"Randevu sayfasını kontrol et: {url}"]
 
         return slots
 
     except TimeoutException:
-        log.error(f"[VFS][{target['country']}] Zaman aşımı: {url}")
+        log.error(f"[VFS][{country}] Zaman aşımı: {url}")
         return []
     except Exception as e:
-        log.error(f"[VFS][{target['country']}] Hata: {e}")
+        log.error(f"[VFS][{country}] Hata: {e}")
         return []
     finally:
         if driver:
@@ -168,24 +118,67 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
                 pass
 
 
-def _extract_slots(driver, city_filter: str) -> list[str]:
+def _select_dropdown(driver, field: str, keyword: str, country: str):
+    """Mat-select veya native select içinden keyword'e uyan seçeneği seçer."""
+    keyword_lower = keyword.lower()
+
+    # Önce mat-select dene (Angular Material)
+    try:
+        selects = driver.find_elements(By.CSS_SELECTOR, "mat-select")
+        for sel in selects:
+            if not sel.is_displayed():
+                continue
+            sel.click()
+            human_delay(0.5, 1.5)
+
+            options = WebDriverWait(driver, 5).until(
+                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "mat-option"))
+            )
+            matched = False
+            for opt in options:
+                if keyword_lower in opt.text.lower():
+                    opt.click()
+                    matched = True
+                    break
+
+            if matched:
+                return
+
+            # Eşleşme yoksa kapat
+            try:
+                driver.find_element(By.CSS_SELECTOR, ".cdk-overlay-backdrop").click()
+            except Exception:
+                pass
+
+    except Exception:
+        pass
+
+    # Native select dene
+    try:
+        selects = driver.find_elements(By.TAG_NAME, "select")
+        for sel in selects:
+            if not sel.is_displayed():
+                continue
+            select_obj = Select(sel)
+            for opt in select_obj.options:
+                if keyword_lower in opt.text.lower():
+                    select_obj.select_by_visible_text(opt.text)
+                    return
+    except Exception:
+        pass
+
+    log.warning(f"[VFS][{country}] '{keyword}' seçeneği bulunamadı ({field})")
+
+
+def _extract_slots(driver) -> list[str]:
     slots = []
-    for selector in ["mat-option", "li.slot", "div.slot-time", "td.available", ".appointment-slot"]:
+    for selector in ["mat-option", ".slot", "td.available", ".appointment-slot", "button.date-btn"]:
         try:
             for el in driver.find_elements(By.CSS_SELECTOR, selector):
                 text = el.text.strip()
-                if text and (not city_filter or city_filter in text.lower()):
+                if text and any(y in text for y in ["2025", "2026", ":"]):
                     slots.append(text)
         except Exception:
             continue
-
-    if not slots:
-        try:
-            for el in driver.find_elements(By.CSS_SELECTOR, "td, .date-cell"):
-                text = el.text.strip()
-                if any(y in text for y in ["2025", "2026"]):
-                    slots.append(text)
-        except Exception:
-            pass
 
     return list(dict.fromkeys(slots))[:20]

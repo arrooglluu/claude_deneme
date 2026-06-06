@@ -30,7 +30,8 @@ targets:
     center: "IDATA"
     country: "İtalya"
     url: "https://www.idata.com.tr/ita/tr/p/randevu-islemleri-ita"
-    city_filter: ""   # Sadece İstanbul randevularını filtrele
+    city_filter: "istanbul"
+    category_filter: "turizm"   # Sadece İstanbul randevularını filtrele
 
   # VFS Global - Çekya
   - id: "vfs_czechia"
@@ -46,7 +47,8 @@ targets:
     center: "ASVISA"
     country: "Macaristan"
     url: "https://appointment.as-visa.com/tr/istanbul-bireysel-basvuru"
-    city_filter: ""
+    city_filter: "istanbul"
+    category_filter: "turizm"
 
   # VFS Global - Hollanda
   - id: "vfs_netherlands"
