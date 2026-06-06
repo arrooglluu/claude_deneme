@@ -15,8 +15,8 @@ from datetime import datetime
 from pathlib import Path
 
 import schedule
-import yaml
 
+import config_loader
 from notifier import notify
 from checkers import vfs_checker, bls_checker
 
@@ -39,8 +39,7 @@ _last_notified: dict[str, str] = {}
 
 
 def load_config(path: str = "config.yaml") -> dict:
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    return config_loader.load()
 
 
 def check_target(config: dict, target: dict):
@@ -109,12 +108,7 @@ def main():
     parser.add_argument("--config", default="config.yaml", help="Config dosyası yolu")
     args = parser.parse_args()
 
-    config_path = Path(args.config)
-    if not config_path.exists():
-        log.error(f"Config dosyası bulunamadı: {config_path}")
-        sys.exit(1)
-
-    config = load_config(str(config_path))
+    config = load_config(args.config)
 
     if args.test_notify:
         test_notifications(config)
