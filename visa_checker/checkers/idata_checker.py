@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 UA = UserAgent()
 
 NO_SLOT_PHRASES = [
+    "uygun randevu tarihi bulunmamaktadır",
     "müsait randevu bulunmamaktadır",
     "randevu mevcut değil",
     "uygun randevu yok",
