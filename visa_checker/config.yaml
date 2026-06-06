@@ -1,0 +1,73 @@
+# ============================================================
+#  VİZE RANDEVU TAKİP SİSTEMİ - YAPILANDIRMA DOSYASI
+# ============================================================
+
+# --- Telegram ---
+telegram:
+  bot_token: "BURAYA_BOT_TOKEN_YAZ"   # BotFather'dan alınan token
+  chat_id: "BURAYA_CHAT_ID_YAZ"       # /getMyId botundan öğrenilen ID
+
+# --- E-posta ---
+email:
+  enabled: true
+  smtp_server: "smtp.gmail.com"
+  smtp_port: 587
+  sender: "seninadresin@gmail.com"
+  password: "GMAIL_UYGULAMA_SIFRESI"  # Gmail App Password (MFA açıksa)
+  recipients:
+    - "seninadresin@gmail.com"
+
+# --- Kontrol ayarları ---
+check_interval_minutes: 5   # Kaç dakikada bir kontrol yapılsın
+headless: true               # true = tarayıcı arka planda çalışır
+
+# --- Takip edilecek konsolosluklar ---
+targets:
+
+  # VFS Global - İtalya
+  - id: "vfs_italy"
+    enabled: true
+    center: "VFS"
+    country: "İtalya"
+    url: "https://visa.vfsglobal.com/tur/tr/ita/book-an-appointment"
+    city_filter: "Istanbul"   # Sadece İstanbul randevularını filtrele
+
+  # VFS Global - Çekya
+  - id: "vfs_czechia"
+    enabled: true
+    center: "VFS"
+    country: "Çekya"
+    url: "https://visa.vfsglobal.com/tur/tr/cze/book-an-appointment"
+    city_filter: "Istanbul"
+
+  # VFS Global - Macaristan
+  - id: "vfs_hungary"
+    enabled: true
+    center: "VFS"
+    country: "Macaristan"
+    url: "https://visa.vfsglobal.com/tur/tr/hun/book-an-appointment"
+    city_filter: "Istanbul"
+
+  # VFS Global - Hollanda
+  - id: "vfs_netherlands"
+    enabled: true
+    center: "VFS"
+    country: "Hollanda"
+    url: "https://visa.vfsglobal.com/tur/tr/nld/book-an-appointment"
+    city_filter: "Istanbul"
+
+  # VFS Global - İngiltere (UK ayrı portal)
+  - id: "vfs_uk"
+    enabled: true
+    center: "VFS"
+    country: "İngiltere"
+    url: "https://www.vfsglobal.co.uk/tur/english/book-an-appointment"
+    city_filter: "Istanbul"
+
+  # BLS International - İspanya
+  - id: "bls_spain"
+    enabled: true
+    center: "BLS"
+    country: "İspanya"
+    url: "https://tr.blsinternational.com/spain/appointment.php"
+    city_filter: "Istanbul"
