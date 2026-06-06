@@ -56,9 +56,9 @@ targets:
     url: "https://visa.vfsglobal.com/tur/tr/nld/book-an-appointment"
     city_filter: "Istanbul"
 
-  # VFS Global - İngiltere (UK ayrı portal)
+  # VFS Global - İngiltere (devre dışı)
   - id: "vfs_uk"
-    enabled: true
+    enabled: false
     center: "VFS"
     country: "İngiltere"
     url: "https://www.vfsglobal.co.uk/tur/english/book-an-appointment"
