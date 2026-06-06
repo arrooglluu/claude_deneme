@@ -20,6 +20,8 @@ log = logging.getLogger(__name__)
 UA = UserAgent()
 
 NO_SLOT_PHRASES = [
+    "aktif randevu kotası bulunmamaktadır",
+    "uygun randevu kotası bulunmamaktadır",
     "müsait randevu bulunmamaktadır",
     "randevu mevcut değil",
     "no appointment",
@@ -27,6 +29,14 @@ NO_SLOT_PHRASES = [
     "uygun randevu yok",
     "slot yok",
     "randevu bulunamadı",
+]
+
+SLOT_AVAILABLE_PHRASES = [
+    "randevu talebi oluştur",
+    "tarih seç",
+    "uygun tarihler",
+    "randevu al",
+    "müsait",
 ]
 
 
@@ -93,24 +103,14 @@ def _check_with_selenium(target: dict, headless: bool) -> list[str]:
                 log.info(f"[AS-VISA][{target['country']}] Müsait randevu yok.")
                 return []
 
-        slots = []
-        try:
-            elements = driver.find_elements(
-                By.CSS_SELECTOR,
-                "select option, .appointment-date, td.available, .slot, button.date, .time-slot"
-            )
-            for el in elements:
-                text = el.text.strip()
-                if not text or text.lower() in ("seç", "select", "--", "lütfen seçin"):
-                    continue
-                slots.append(text)
-        except Exception:
-            pass
+        # Pozitif onay olmadan bildirim gönderme
+        for phrase in SLOT_AVAILABLE_PHRASES:
+            if phrase in page_text:
+                log.info(f"[AS-VISA][{target['country']}] Randevu mevcut!")
+                return [f"Randevu mevcut — hemen kontrol et: {target['url']}"]
 
-        if not slots:
-            slots = [f"Randevu sayfasını kontrol et: {target['url']}"]
-
-        return slots
+        log.warning(f"[AS-VISA][{target['country']}] Sayfa içeriği okunamadı, bildirim gönderilmiyor.")
+        return []
 
     except TimeoutException:
         log.error(f"[AS-VISA][{target['country']}] Zaman aşımı.")
