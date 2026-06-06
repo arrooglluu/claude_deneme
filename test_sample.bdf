@@ -1,0 +1,24 @@
+$ Nastran BDF - Örnek Test Dosyası
+$
+SOL 101
+CEND
+BEGIN BULK
+$
+$ Fixed-field FORCE kartları
+$ FORCE   SID     G       CID     F       N1      N2      N3
+FORCE   1       101     0       1000.0  1.0     0.0     0.0
+FORCE   1       102     0       500.0   0.0     1.0     0.0
+FORCE   2       201     1       2500.0  0.0     0.0     1.0
+FORCE   2       202     0       750.0   0.707   0.707   0.0
+$
+$ Negatif kuvvet
+FORCE   3       301     0       -300.0  1.0     0.0     0.0
+$
+$ Nastran kısa bilimsel notasyon
+FORCE   4       401     0       1.5+3   0.0     1.0     0.0
+$
+$ Serbest alan (free-field) formatı
+FORCE,5,501,0,800.0,0.0,0.0,-1.0
+FORCE,5,502,0,1200.0,1.0,0.0,0.0
+$
+ENDDATA
