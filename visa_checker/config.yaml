@@ -24,13 +24,13 @@ headless: true               # true = tarayıcı arka planda çalışır
 # --- Takip edilecek konsolosluklar ---
 targets:
 
-  # VFS Global - İtalya
-  - id: "vfs_italy"
+  # iDATA - İtalya
+  - id: "idata_italy"
     enabled: true
-    center: "VFS"
+    center: "IDATA"
     country: "İtalya"
-    url: "https://visa.vfsglobal.com/tur/tr/ita/book-an-appointment"
-    city_filter: "Istanbul"   # Sadece İstanbul randevularını filtrele
+    url: "https://www.idata.com.tr/ita/tr/p/randevu-islemleri-ita"
+    city_filter: ""   # Sadece İstanbul randevularını filtrele
 
   # VFS Global - Çekya
   - id: "vfs_czechia"
