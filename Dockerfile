@@ -18,6 +18,7 @@ RUN wget -q -O /tmp/chrome.deb \
 WORKDIR /app
 COPY visa_checker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install chromium && playwright install-deps chromium
 
 COPY visa_checker/ .
 

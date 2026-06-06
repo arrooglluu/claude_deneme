@@ -1,18 +1,13 @@
 """
-VFS Global randevu kontrol modülü.
-Selenium ile formu doldurup (merkez + kategori + alt kategori) slot kontrolü yapar.
+VFS Global randevu kontrol modülü — Playwright versiyonu.
+Playwright, Selenium'a göre çok daha iyi Cloudflare geçer.
 """
 
 import logging
 import random
 import time
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-
-from browser import build_driver, human_delay, human_scroll
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 
 log = logging.getLogger(__name__)
 
@@ -28,157 +23,108 @@ NO_SLOT_PHRASES = [
     "müsait randevu bulunmamaktadır",
 ]
 
-# Her ülke için merkez adı, kategori ve alt kategori anahtar kelimeleri
 VFS_FORM_CONFIG = {
-    "Çekya": {
-        "center_keyword": "Istanbul",
-        "category_keyword": "KISA DONEM",
-        "subcategory_keyword": "TURIZM",
-    },
-    "Hollanda": {
-        "center_keyword": "Istanbul",
-        "category_keyword": "SHORT STAY",
-        "subcategory_keyword": "TOURISM",
-    },
-    "Avusturya": {
-        "center_keyword": "Istanbul",
-        "category_keyword": "SHORT STAY",
-        "subcategory_keyword": "TOURISM",
-    },
+    "Çekya":     {"center": "Istanbul", "category": "KISA DONEM", "subcategory": "TURIZM"},
+    "Hollanda":  {"center": "Istanbul", "category": "SHORT STAY",  "subcategory": "TOURISM"},
+    "Avusturya": {"center": "Istanbul", "category": "SHORT STAY",  "subcategory": "TOURISM"},
 }
 
 
 def check(target: dict, headless: bool = True) -> list[str]:
-    return _check_with_selenium(target, headless)
-
-
-def _check_with_selenium(target: dict, headless: bool) -> list[str]:
-    url = target["url"]
     country = target["country"]
+    url = target["url"]
     form_cfg = VFS_FORM_CONFIG.get(country, {})
-    driver = None
 
     try:
-        driver = build_driver(headless)
-        driver.get("https://visa.vfsglobal.com")
-        human_delay(2, 4)
-        driver.get(url)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(
+                headless=headless,
+                args=[
+                    "--no-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                ],
+            )
+            context = browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="tr-TR",
+                timezone_id="Europe/Istanbul",
+                viewport={"width": random.choice([1920, 1366, 1536]), "height": random.choice([1080, 768, 864])},
+            )
 
-        # Angular uygulamasının yüklenmesini bekle
-        WebDriverWait(driver, 30).until(
-            EC.presence_of_element_located((By.TAG_NAME, "app-root"))
-        )
-        human_delay(3, 5)
-        human_scroll(driver)
+            # Bot tespitini engelle
+            context.add_init_script("""
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+                window.chrome = { runtime: {} };
+            """)
 
-        # Merkez seç
-        if form_cfg.get("center_keyword"):
-            _select_dropdown(driver, "center_keyword", form_cfg["center_keyword"], country)
-            human_delay(1, 3)
+            page = context.new_page()
 
-        # Kategori seç
-        if form_cfg.get("category_keyword"):
-            _select_dropdown(driver, "category_keyword", form_cfg["category_keyword"], country)
-            human_delay(1, 3)
+            # Önce ana sayfaya git
+            page.goto("https://visa.vfsglobal.com", wait_until="domcontentloaded", timeout=30000)
+            time.sleep(random.uniform(2, 4))
 
-        # Alt kategori seç
-        if form_cfg.get("subcategory_keyword"):
-            _select_dropdown(driver, "subcategory_keyword", form_cfg["subcategory_keyword"], country)
-            human_delay(2, 4)
+            # Randevu sayfasına git
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(random.uniform(3, 6))
 
-        # Sonucu oku
-        page_text = driver.find_element(By.TAG_NAME, "body").text.lower()
+            # Formu doldur
+            if form_cfg:
+                _fill_form(page, form_cfg, country)
+                time.sleep(random.uniform(2, 4))
+
+            page_text = page.inner_text("body").lower()
+
+            browser.close()
 
         for phrase in NO_SLOT_PHRASES:
-            if phrase.lower() in page_text:
+            if phrase in page_text:
                 log.info(f"[VFS][{country}] Müsait randevu yok.")
                 return []
 
-        slots = _extract_slots(driver)
+        # Pozitif randevu işareti ara
+        if any(kw in page_text for kw in ["select date", "tarih seç", "available", "book"]):
+            log.info(f"[VFS][{country}] Randevu mevcut!")
+            return [f"Randevu mevcut — hemen kontrol et: {url}"]
 
-        if slots:
-            log.info(f"[VFS][{country}] {len(slots)} slot bulundu!")
-        else:
-            log.warning(f"[VFS][{country}] 'Slot yok' mesajı yok — manuel kontrol et!")
-            slots = [f"Randevu sayfasını kontrol et: {url}"]
+        log.warning(f"[VFS][{country}] Sayfa içeriği okunamadı, bildirim gönderilmiyor.")
+        return []
 
-        return slots
-
-    except TimeoutException:
+    except PlaywrightTimeout:
         log.error(f"[VFS][{country}] Zaman aşımı: {url}")
         return []
     except Exception as e:
         log.error(f"[VFS][{country}] Hata: {e}")
         return []
-    finally:
-        if driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
 
 
-def _select_dropdown(driver, field: str, keyword: str, country: str):
-    """Mat-select veya native select içinden keyword'e uyan seçeneği seçer."""
-    keyword_lower = keyword.lower()
+def _fill_form(page, form_cfg: dict, country: str):
+    """VFS formundaki dropdown'ları doldurur."""
 
-    # Önce mat-select dene (Angular Material)
-    try:
-        selects = driver.find_elements(By.CSS_SELECTOR, "mat-select")
-        for sel in selects:
-            if not sel.is_displayed():
-                continue
-            sel.click()
-            human_delay(0.5, 1.5)
+    # mat-select dropdown'larını doldur
+    selects = page.query_selector_all("mat-select")
 
-            options = WebDriverWait(driver, 5).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "mat-option"))
-            )
-            matched = False
-            for opt in options:
-                if keyword_lower in opt.text.lower():
-                    opt.click()
-                    matched = True
-                    break
-
-            if matched:
-                return
-
-            # Eşleşme yoksa kapat
-            try:
-                driver.find_element(By.CSS_SELECTOR, ".cdk-overlay-backdrop").click()
-            except Exception:
-                pass
-
-    except Exception:
-        pass
-
-    # Native select dene
-    try:
-        selects = driver.find_elements(By.TAG_NAME, "select")
-        for sel in selects:
-            if not sel.is_displayed():
-                continue
-            select_obj = Select(sel)
-            for opt in select_obj.options:
-                if keyword_lower in opt.text.lower():
-                    select_obj.select_by_visible_text(opt.text)
-                    return
-    except Exception:
-        pass
-
-    log.warning(f"[VFS][{country}] '{keyword}' seçeneği bulunamadı ({field})")
-
-
-def _extract_slots(driver) -> list[str]:
-    slots = []
-    for selector in ["mat-option", ".slot", "td.available", ".appointment-slot", "button.date-btn"]:
+    for sel in selects:
         try:
-            for el in driver.find_elements(By.CSS_SELECTOR, selector):
-                text = el.text.strip()
-                if text and any(y in text for y in ["2025", "2026", ":"]):
-                    slots.append(text)
+            sel.click()
+            time.sleep(0.8)
+            options = page.query_selector_all("mat-option")
+            for opt in options:
+                text = opt.inner_text().lower()
+                if (form_cfg["center"].lower() in text or
+                        form_cfg["category"].lower() in text or
+                        form_cfg["subcategory"].lower() in text):
+                    opt.click()
+                    time.sleep(0.5)
+                    break
+            else:
+                # Eşleşme yoksa kapat
+                page.keyboard.press("Escape")
+                time.sleep(0.3)
         except Exception:
             continue
-
-    return list(dict.fromkeys(slots))[:20]

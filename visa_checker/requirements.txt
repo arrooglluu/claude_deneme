@@ -8,3 +8,4 @@ requests>=2.31.0
 schedule>=1.2.0
 pyyaml>=6.0
 fake-useragent>=1.5.1
+playwright>=1.44.0
